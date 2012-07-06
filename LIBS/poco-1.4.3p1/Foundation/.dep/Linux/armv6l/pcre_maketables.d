@@ -1,0 +1,2 @@
+/home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/debug_static/pcre_maketables.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/release_static/pcre_maketables.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/debug_shared/pcre_maketables.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/release_shared/pcre_maketables.o: src/pcre_maketables.c src/pcre_config.h \
+ src/pcre_internal.h src/pcre.h src/ucp.h

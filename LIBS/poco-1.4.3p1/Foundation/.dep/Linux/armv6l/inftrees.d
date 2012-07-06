@@ -1,0 +1,2 @@
+/home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/debug_static/inftrees.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/release_static/inftrees.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/debug_shared/inftrees.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/release_shared/inftrees.o: src/inftrees.c src/zutil.h src/zlib.h src/zconf.h \
+ src/inftrees.h

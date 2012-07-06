@@ -1,0 +1,2 @@
+/home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/debug_static/pcre_try_flipped.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/release_static/pcre_try_flipped.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/debug_shared/pcre_try_flipped.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/release_shared/pcre_try_flipped.o: src/pcre_try_flipped.c src/pcre_config.h \
+ src/pcre_internal.h src/pcre.h src/ucp.h

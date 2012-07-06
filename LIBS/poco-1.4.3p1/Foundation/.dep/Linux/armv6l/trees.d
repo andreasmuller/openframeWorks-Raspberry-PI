@@ -1,0 +1,2 @@
+/home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/debug_static/trees.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/release_static/trees.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/debug_shared/trees.o /home/pi/Desktop/SOURCE/OF0071_ARM/LIBS/poco-1.4.3p1/Foundation/obj/Linux/armv6l/release_shared/trees.o: src/trees.c src/deflate.h src/zutil.h src/zlib.h src/zconf.h \
+ src/trees.h
