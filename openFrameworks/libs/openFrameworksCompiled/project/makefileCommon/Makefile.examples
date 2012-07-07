@@ -76,6 +76,21 @@ INCLUDES = $(shell find $(OF_ROOT)/libs/*/include -type d | grep -v glu | grep -
 INCLUDES_FLAGS += $(addprefix -I,$(INCLUDES))
 INCLUDES_FLAGS += -I$(OF_ROOT)/libs/poco/include
 
+# Andreas:
+ifeq ($(ARCH),armv6l)
+
+        INCLUDES_FLAGS += -I/opt/vc/include/
+        INCLUDES_FLAGS += -I/opt/vc/include/interface/vcos/pthreads
+
+        INCLUDES_FLAGS += -I../../../../openFrameworks/HIDE/HIDE_COMPILED/tess2/include
+        INCLUDES_FLAGS += -I../../../../openFrameworks/HIDE/HIDE_COMPILED/kiss/include
+        INCLUDES_FLAGS += -I../../../../openFrameworks/HIDE/portaudio/include
+
+		# -lEGL -lopenmaxil -lbcm_host
+
+endif
+
+
 LIB_STATIC += $(shell ls $(OF_ROOT)/libs/*/lib/$(LIBSPATH)/*.a  2> /dev/null | grep -v openFrameworksCompiled | grep -v Poco)
 LIB_SHARED += $(shell ls $(OF_ROOT)/libs/*/lib/$(LIBSPATH)/*.so  2> /dev/null | grep -v openFrameworksCompiled | sed "s/.*\\/lib\([^/]*\)\.so/-l\1/")
 LIB_PATHS_FLAGS = $(shell ls -d $(OF_ROOT)/libs/*/lib/$(LIBSPATH) | sed "s/\(\.*\)/-L\1/")
@@ -84,6 +99,9 @@ CFLAGS += -Wall -fexceptions
 CFLAGS += -I.
 CFLAGS += $(INCLUDES_FLAGS)
 CFLAGS += $(CORE_INCLUDE_FLAGS)
+
+# Andreas, turn off warning for 'note: the mangling of va_list has changed in GCC 4.4'
+CFLAGS += -Wno-psabi
 
 ifeq ($(findstring Debug,$(TARGET_NAME)),Debug)
 	CFLAGS += -g3
@@ -102,14 +120,14 @@ ifeq ($(findstring addons.make,$(wildcard *.make)),addons.make)
 	else
 		ADDONS = $(shell cat addons.make)
 	endif
-	
+
 	ifneq ($(strip $(ADDONS)),)
 	    ADDONS_REL_DIRS = $(addsuffix /src, $(ADDONS))
 	    ADDONS_LIBS_REL_DIRS = $(addsuffix /libs, $(ADDONS))
 	    ADDONS_DIRS = $(addprefix $(OF_ROOT)/addons/, $(ADDONS_REL_DIRS) )
 	    ADDONS_LIBS_DIRS = $(addprefix $(OF_ROOT)/addons/, $(ADDONS_LIBS_REL_DIRS) )
 	    ADDONS_BIN_LIBS_DIRS = $(addsuffix /*/lib/$(LIBSPATH), $(ADDONS_LIBS_DIRS) )
-	
+
 	    ADDONS_INCLUDES = $(ADDONS_DIRS)
 	    ADDONS_INCLUDES = $(ADDONS_LIBS_DIRS)
 	    ADDONS_INCLUDES += $(shell find $(ADDONS_DIRS) -type d 2> /dev/null)
@@ -176,7 +194,7 @@ $(OBJ_OUTPUT)%.o: %.cpp
 	@echo "compiling $(ARCH) object for: " $<
 	mkdir -p $(@D)
 	$(CXX) -c $(TARGET_CFLAGS) $(CFLAGS) $(ADDONSCFLAGS) $(USER_CFLAGS) -MMD -MP -MF$(OBJ_OUTPUT)$*.d -MT$(OBJ_OUTPUT)$*.o -o$@ -c $<
-	
+
 $(OBJ_OUTPUT)%.o: %.cxx
 	@echo "compiling $(ARCH) object for: " $<
 	mkdir -p $(@D)
@@ -196,7 +214,7 @@ $(OBJ_OUTPUT)%.o: $(OF_ROOT)/%.cpp
 	@echo "compiling addon $(ARCH) object for" $<
 	mkdir -p $(@D)
 	$(CXX) $(TARGET_CFLAGS) $(CFLAGS) $(ADDONSCFLAGS) $(USER_CFLAGS) -MMD -MP -MF$(OBJ_OUTPUT)$*.d -MT$(OBJ_OUTPUT)$*.o -o $@ -c $<
-	
+
 $(OBJ_OUTPUT)%.o: $(OF_ROOT)/%.cxx
 	@echo "compiling addon $(ARCH) object for" $<
 	mkdir -p $(@D)
@@ -206,7 +224,7 @@ $(OBJ_OUTPUT)%.o: $(OF_ROOT)/%.c
 	@echo "compiling addon $(ARCH) object for" $<
 	mkdir -p $(@D)
 	$(CC) $(TARGET_CFLAGS) $(CFLAGS) $(ADDONSCFLAGS) $(USER_CFLAGS) -MMD -MP -MF$(OBJ_OUTPUT)$*.d -MT$(OBJ_OUTPUT)$*.o -o $@ -c $<
-	
+
 $(OBJ_OUTPUT)%.o: $(OF_ROOT)/%.cc
 	@echo "compiling addon $(ARCH) object for" $<
 	mkdir -p $(@D)
@@ -216,7 +234,7 @@ $(OBJ_OUTPUT)%.o: $(USER_SOURCE_DIR)/%.c
 	@echo "compiling $(ARCH) object for: " $<
 	mkdir -p $(@D)
 	$(CC) $(TARGET_CFLAGS) $(CFLAGS) $(ADDONSCFLAGS) $(USER_CFLAGS) -MMD -MP -MF$(OBJ_OUTPUT)$*.d -MT$(OBJ_OUTPUT)$*.o -o$@ -c $<
-	
+
 $(OBJ_OUTPUT)%.o: $(USER_SOURCE_DIR)/%.cc
 	@echo "compiling $(ARCH) object for: " $<
 	mkdir -p $(@D)
@@ -226,12 +244,12 @@ $(OBJ_OUTPUT)%.o: $(USER_SOURCE_DIR)/%.cpp
 	@echo "compiling $(ARCH) object for: " $<
 	mkdir -p $(@D)
 	$(CXX) $(TARGET_CFLAGS) $(CFLAGS) $(ADDONSCFLAGS) $(USER_CFLAGS) -MMD -MP -MF$(OBJ_OUTPUT)$*.d -MT$(OBJ_OUTPUT)$*.o -o$@ -c $<
-	
+
 $(OBJ_OUTPUT)%.o: $(USER_SOURCE_DIR)/%.cxx
 	@echo "compiling $(ARCH) object for: " $<
 	mkdir -p $(@D)
 	$(CXX) $(TARGET_CFLAGS) $(CFLAGS) $(ADDONSCFLAGS) $(USER_CFLAGS) -MMD -MP -MF$(OBJ_OUTPUT)$*.d -MT$(OBJ_OUTPUT)$*.o -o$@ -c $<
-	
+
 $(TARGET): $(OBJS) $(ADDONS_OBJS) $(USER_OBJS) $(TARGET_LIBS) $(LIB_STATIC)
 	@echo 'linking $(ARCH) $(TARGET) $(LIBSPATH)'
 	mkdir -p $(@D)

@@ -87,7 +87,7 @@ ifeq ($(ARCH),android)
 else
 	#SOURCES = $(shell find $(SOURCE_DIRS) -name "*.cpp") 
 	#warning "JVC"
-	SOURCES = $(shell find $(SOURCE_DIRS) -name "*.cpp" | grep -v "ofFmodSoundPlayer.cpp" | grep -v ofQuickTimeGrabber.cpp | grep -v ofQuickTimePlayer.cpp | grep -v ofDirectShowGrabber.cpp) 
+	SOURCES = $(shell find $(SOURCE_DIRS) -name "*.cpp" | grep -v "ofAppGlutWindow.cpp" | grep -v "ofFmodSoundPlayer.cpp" | grep -v ofQuickTimeGrabber.cpp | grep -v ofQuickTimePlayer.cpp | grep -v ofDirectShowGrabber.cpp) 
 
 endif
 OBJFILES = $(patsubst ../../../%.cpp,%.o,$(SOURCES))
@@ -116,6 +116,10 @@ ifeq ($(ARCH),armv6l)
         INCLUDES_FLAGS += -I/opt/vc/include/interface/vcos/pthreads 
 
         INCLUDES_FLAGS += -I../../../../HIDE/HIDE_COMPILED/tess2/include
+        INCLUDES_FLAGS += -I../../../../HIDE/HIDE_COMPILED/kiss/include        
+        INCLUDES_FLAGS += -I../../../../HIDE/portaudio/include
+
+		# -lEGL -lopenmaxil -lbcm_host
 
 endif
 
