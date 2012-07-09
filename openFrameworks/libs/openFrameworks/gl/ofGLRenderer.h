@@ -125,6 +125,9 @@ private:
 	bool bBackgroundAuto;
 	ofFloatColor bgColor;
 
+	ofMatrix4x4 perspectiveMatrix;
+	ofMatrix4x4 lookAtMatrix;
+
 	vector<ofPoint> linePoints;
 	vector<ofPoint> rectPoints;
 	vector<ofPoint> triPoints;

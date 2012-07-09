@@ -12,14 +12,6 @@
 #ifdef TARGET_OSX
 
 #endif
-#ifdef TARGET_LINUX
-	#warning "JVC"
-
-	#include <GLES/gl.h>
-	#define GL_GLEXT_PROTOTYPES
-	#include <GLES/glext.h>
-
-#endif
 
 
 // glut works with static callbacks UGH, so we need static variables here:
@@ -96,75 +88,77 @@ void ofAppEGLWindow::setDoubleBuffering(bool _bDoubleBuffered){
 	bDoubleBuffered = _bDoubleBuffered;
 }
 
-
-
 //------------------------------------------------------------
 void ofAppEGLWindow::setupOpenGL(int w, int h, int screenMode){
 
-	int argc = 1;
-	char *argv = (char*)"openframeworks";
-	char **vptr = &argv;
-	glutInit(&argc, vptr);
+	cout << "ofAppEGLWindow Version " << 4 << "." << endl;
 
-	if( displayString != ""){
-		glutInitDisplayString( displayString.c_str() );
-	}else{
-		if(bDoubleBuffered){  
-			glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH | GLUT_ALPHA );
-		}else{
-			glutInitDisplayMode(GLUT_RGB | GLUT_SINGLE | GLUT_DEPTH | GLUT_ALPHA );
-		}
-	}
+ 	atexit( bcm_host_deinit);
+	bcm_host_init();
+	cout<<"done bcm init" << endl;
+
+	 // toggle we don't yet have an active surface
+	 m_activeSurface = false;
+	 // set default to not upscale the screen resolution
+	 m_upscale = false;
+	 // set our display values to 0 (not once ported to cx11 will use nullptr but
+	 // current pi default compiler doesn't support it yet
+	 m_display = 0;
+	 m_context = 0;
+	 m_surface = 0;
+
+	 // now find the max display size (we will use this later to assert if the user
+	 // defined sizes are in the correct bounds
+	 int32_t success = 0;
+	 success = graphics_get_display_size(0 , &m_width, &m_height);
+	 if ( success == 0 )
+	 {
+	 	cout << __PRETTY_FUNCTION__ << " Was not able to read display size with graphics_get_display_size" << endl;
+	 }
+	 std::cout<<"max width and height "<<m_width<<" "<<m_height<<"\n";
+	 m_maxWidth=m_width;
+	 m_maxHeight=m_height;
+	
+	m_config= new EGLconfig();
+
+	m_config->setDepth( 16 );
+
+	m_width  = w;
+	m_height = h;
+
+	 /*
+	 // if we have a user defined config we will use that else we need to create one
+	 if (_config == 0)
+	 {
+	 	std::cout<<"making new config\n";
+		m_config= new EGLconfig();
+	 }
+	 else
+	 {
+			m_config=_config;
+	 }
+		*/
+
+	// this code actually creates the surface
+	makeSurface(0,0,m_width,m_height);	 
 
 	windowMode = screenMode;
 	bNewScreenMode = true;
 
-	if (windowMode != OF_GAME_MODE){
-		glutInitWindowSize(w, h);
-		glutCreateWindow("");
+	windowW = m_width; //glutGet(GLUT_WINDOW_WIDTH);
+	windowH = m_height; //glutGet(GLUT_WINDOW_HEIGHT);
 
-		/*
-		ofBackground(200,200,200);		// default bg color
-		ofSetColor(0xFFFFFF); 			// default draw color
-		// used to be black, but
-		// black + texture = black
-		// so maybe grey bg
-		// and "white" fg color
-		// as default works the best...
-		*/
-
-		requestedWidth  = glutGet(GLUT_WINDOW_WIDTH);
-		requestedHeight = glutGet(GLUT_WINDOW_HEIGHT);
-	} else {
-		if( displayString != ""){
-			glutInitDisplayString( displayString.c_str() );
-		}else{
-			glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH | GLUT_ALPHA );
-		}
-
-    	// w x h, 32bit pixel depth, 60Hz refresh rate
-		char gameStr[64];
-		sprintf( gameStr, "%dx%d:%d@%d", w, h, 32, 60 );
-
-    	glutGameModeString(gameStr);
-
-    	if (!glutGameModeGet(GLUT_GAME_MODE_POSSIBLE)){
-    		ofLog(OF_LOG_ERROR,"game mode error: selected format (%s) not available \n", gameStr);
-    	}
-    	// start fullscreen game mode
-    	glutEnterGameMode();
-	}
-	windowW = glutGet(GLUT_WINDOW_WIDTH);
-	windowH = glutGet(GLUT_WINDOW_HEIGHT);
+	cout << __PRETTY_FUNCTION__ << endl;	
 }
 
 //------------------------------------------------------------
 void ofAppEGLWindow::initializeWindow(){
 
+	cout << __PRETTY_FUNCTION__ << endl;
 
     //----------------------
     // setup the callbacks
-
+/*
     glutMouseFunc(mouse_cb);
     glutMotionFunc(motion_cb);
     glutPassiveMotionFunc(passive_motion_cb);
@@ -190,20 +184,174 @@ void ofAppEGLWindow::initializeWindow(){
         // this is specific to windows (respond properly to close / destroy)
         fixCloseWindowOnWin32();
     #endif
-
+*/
 }
 
 //------------------------------------------------------------
 void ofAppEGLWindow::runAppViaInfiniteLoop(ofBaseApp * appPtr){
+
+	cout << __PRETTY_FUNCTION__ << endl;
+
 	ofAppPtr = appPtr;
 
 	ofNotifySetup();
 	ofNotifyUpdate();
 
+	bool quit = false;
+	while(!quit)
+	{
+		update();
+		display();
+
+	}
+/*
+
 	glutMainLoop();
+*/	
+
+}
+
+//------------------------------------------------------------
+void ofAppEGLWindow::update()
+{
+	//cout << __PRETTY_FUNCTION__ << endl;
+
+	if (nFrameCount != 0 && bFrameRateSet == true){
+		diffMillis = ofGetElapsedTimeMillis() - prevMillis;
+		if (diffMillis > millisForFrame){
+			; // we do nothing, we are already slower than target frame
+		} else {
+			int waitMillis = millisForFrame - diffMillis;
+			#ifdef TARGET_WIN32
+				Sleep(waitMillis);         //windows sleep in milliseconds
+			#else
+				usleep(waitMillis * 1000);   //mac sleep in microseconds - cooler :)
+			#endif
+		}
+	}
+	prevMillis = ofGetElapsedTimeMillis(); // you have to measure here
+
+    // -------------- fps calculation:
+	// theo - now moved from display to idle_cb
+	// discuss here: http://github.com/openframeworks/openFrameworks/issues/labels/0062#issue/187
+	//
+	//
+	// theo - please don't mess with this without letting me know.
+	// there was some very strange issues with doing ( timeNow-timeThen ) producing different values to: double diff = timeNow-timeThen;
+	// http://www.openframeworks.cc/forum/viewtopic.php?f=7&t=1892&p=11166#p11166
+
+	timeNow = ofGetElapsedTimef();
+	double diff = timeNow-timeThen;
+	if( diff  > 0.00001 ){
+		fps			= 1.0 / diff;
+		frameRate	*= 0.9f;
+		frameRate	+= 0.1f*fps;
+	 }
+	 lastFrameTime	= diff;
+	 timeThen		= timeNow;
+  	// --------------
+
+	ofNotifyUpdate();
 }
 
 
+//------------------------------------------------------------
+void ofAppEGLWindow::display(void){
+
+	if (windowMode != OF_GAME_MODE){
+		if ( bNewScreenMode ){
+			if( windowMode == OF_FULLSCREEN){
+
+				//----------------------------------------------------
+				// before we go fullscreen, take a snapshot of where we are:
+				nonFullScreenX = -1; //glutGet(GLUT_WINDOW_X);
+				nonFullScreenY = -1; //glutGet(GLUT_WINDOW_Y);
+				//----------------------------------------------------
+
+				//glutFullScreen();
+
+			}else if( windowMode == OF_WINDOW ){
+
+				//glutReshapeWindow(requestedWidth, requestedHeight);
+
+				//----------------------------------------------------
+				// if we have recorded the screen posion, put it there
+				// if not, better to let the system do it (and put it where it wants)
+				if (nFrameCount > 0){
+					//glutPositionWindow(nonFullScreenX,nonFullScreenY);
+				}
+
+			}
+			bNewScreenMode = false;
+		}
+	}
+
+	// set viewport, clear the screen
+	//ofViewport(0, 0, glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));		// used to be glViewport( 0, 0, width, height );
+	ofViewport(0, 0, windowW, windowH);
+
+	float * bgPtr = ofBgColorPtr();
+	bool bClearAuto = ofbClearBg();
+
+	if ( bClearAuto == true || nFrameCount < 3){
+		ofClear(bgPtr[0]*255,bgPtr[1]*255,bgPtr[2]*255, bgPtr[3]*255);
+	}
+
+	if( bEnableSetupScreen )ofSetupScreen();
+
+	ofNotifyDraw();
+
+    #ifdef TARGET_WIN32
+    if (bClearAuto == false){
+        // on a PC resizing a window with this method of accumulation (essentially single buffering)
+        // is BAD, so we clear on resize events.
+        if (nFramesSinceWindowResized < 3){
+        	ofClear(bgPtr[0]*255,bgPtr[1]*255,bgPtr[2]*255, bgPtr[3]*255);
+        } else {
+            if ( (nFrameCount < 3 || nFramesSinceWindowResized < 3) && bDoubleBuffered)   swapBuffers();
+            else                                                     glFlush();
+        }
+    } else {
+        if(bDoubleBuffered){
+			swapBuffers();
+		} else{
+			glFlush();
+		}
+    }
+    #else
+		if (bClearAuto == false){
+			// in accum mode resizing a window is BAD, so we clear on resize events.
+			if (nFramesSinceWindowResized < 3){
+				ofClear(bgPtr[0]*255,bgPtr[1]*255,bgPtr[2]*255, bgPtr[3]*255);
+			}
+		}
+		if(bDoubleBuffered){
+			swapBuffers();
+		} else{
+			glFlush();
+		}
+    #endif
+
+    nFramesSinceWindowResized++;
+
+	//fps calculation moved to idle_cb as we were having fps speedups when heavy drawing was occuring
+	//wasn't reflecting on the actual app fps which was in reality slower.
+	//could be caused by some sort of deferred drawing?
+
+	nFrameCount++;		// increase the overall frame count
+
+	//setFrameNum(nFrameCount); // get this info to ofUtils for people to access
+
+	//cout << __PRETTY_FUNCTION__ << endl;
+}
+
+//------------------------------------------------------------
+void ofAppEGLWindow::swapBuffers() const
+{
+	//cout << __PRETTY_FUNCTION__ << endl;
+
+	eglSwapBuffers(m_display, m_surface);
+}
 
 //------------------------------------------------------------
 float ofAppEGLWindow::getFrameRate(){
@@ -222,7 +370,7 @@ int ofAppEGLWindow::getFrameNum(){
 
 //------------------------------------------------------------
 void ofAppEGLWindow::setWindowTitle(string title){
-	glutSetWindowTitle(title.c_str());
+	//glutSetWindowTitle(title.c_str());
 }
 
 //------------------------------------------------------------
@@ -272,12 +420,12 @@ ofOrientation ofAppEGLWindow::getOrientation(){
 
 //------------------------------------------------------------
 void ofAppEGLWindow::setWindowPosition(int x, int y){
-	glutPositionWindow(x,y);
+	//glutPositionWindow(x,y);
 }
 
 //------------------------------------------------------------
 void ofAppEGLWindow::setWindowShape(int w, int h){
-	glutReshapeWindow(w, h);
+	//glutReshapeWindow(w, h);
 	// this is useful, esp if we are in the first frame (setup):
 	requestedWidth  = w;
 	requestedHeight = h;
@@ -356,127 +504,6 @@ void ofAppEGLWindow::disableSetupScreen(){
 
 
 //------------------------------------------------------------
-void ofAppEGLWindow::display(void){
-
-	//--------------------------------
-	// when I had "glutFullScreen()"
-	// in the initOpenGl, I was gettings a "heap" allocation error
-	// when debugging via visual studio.  putting it here, changes that.
-	// maybe it's voodoo, or I am getting rid of the problem
-	// by removing something unrelated, but everything seems
-	// to work if I put fullscreen on the first frame of display.
-
-	if (windowMode != OF_GAME_MODE){
-		if ( bNewScreenMode ){
-			if( windowMode == OF_FULLSCREEN){
-
-				//----------------------------------------------------
-				// before we go fullscreen, take a snapshot of where we are:
-				nonFullScreenX = glutGet(GLUT_WINDOW_X);
-				nonFullScreenY = glutGet(GLUT_WINDOW_Y);
-				//----------------------------------------------------
-
-				glutFullScreen();
-
-				#ifdef TARGET_OSX
-					SetSystemUIMode(kUIModeAllHidden,NULL);
-					#ifdef MAC_OS_X_VERSION_10_7 //needed for Lion as when the machine reboots the app is not at front level
-						if( nFrameCount <= 10 ){  //is this long enough? too long? 
-							ProcessSerialNumber psn;							
-							OSErr err = GetCurrentProcess( &psn );
-							if ( err == noErr ){
-								SetFrontProcess( &psn );
-							}
-						}
-					#endif
-				#endif
-
-			}else if( windowMode == OF_WINDOW ){
-
-				glutReshapeWindow(requestedWidth, requestedHeight);
-
-				//----------------------------------------------------
-				// if we have recorded the screen posion, put it there
-				// if not, better to let the system do it (and put it where it wants)
-				if (nFrameCount > 0){
-					glutPositionWindow(nonFullScreenX,nonFullScreenY);
-				}
-				//----------------------------------------------------
-
-				#ifdef TARGET_OSX
-					SetSystemUIMode(kUIModeNormal,NULL);
-				#endif
-			}
-			bNewScreenMode = false;
-		}
-	}
-
-	// set viewport, clear the screen
-	ofViewport(0, 0, glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));		// used to be glViewport( 0, 0, width, height );
-	float * bgPtr = ofBgColorPtr();
-	bool bClearAuto = ofbClearBg();
-
-    // to do non auto clear on PC for now - we do something like "single" buffering --
-    // it's not that pretty but it work for the most part
-
-    #ifdef TARGET_WIN32
-    if (bClearAuto == false){
-        glDrawBuffer (GL_FRONT);
-    }
-    #endif
-
-	if ( bClearAuto == true || nFrameCount < 3){
-		ofClear(bgPtr[0]*255,bgPtr[1]*255,bgPtr[2]*255, bgPtr[3]*255);
-	}
-
-	if( bEnableSetupScreen )ofSetupScreen();
-
-	ofNotifyDraw();
-
-    #ifdef TARGET_WIN32
-    if (bClearAuto == false){
-        // on a PC resizing a window with this method of accumulation (essentially single buffering)
-        // is BAD, so we clear on resize events.
-        if (nFramesSinceWindowResized < 3){
-        	ofClear(bgPtr[0]*255,bgPtr[1]*255,bgPtr[2]*255, bgPtr[3]*255);
-        } else {
-            if ( (nFrameCount < 3 || nFramesSinceWindowResized < 3) && bDoubleBuffered)    glutSwapBuffers();
-            else                                                     glFlush();
-        }
-    } else {
-        if(bDoubleBuffered){
-			glutSwapBuffers();
-		} else{
-			glFlush();
-		}
-    }
-    #else
-		if (bClearAuto == false){
-			// in accum mode resizing a window is BAD, so we clear on resize events.
-			if (nFramesSinceWindowResized < 3){
-				ofClear(bgPtr[0]*255,bgPtr[1]*255,bgPtr[2]*255, bgPtr[3]*255);
-			}
-		}
-		if(bDoubleBuffered){
-			glutSwapBuffers();
-		} else{
-			glFlush();
-		}
-    #endif
-
-    nFramesSinceWindowResized++;
-
-	//fps calculation moved to idle_cb as we were having fps speedups when heavy drawing was occuring
-	//wasn't reflecting on the actual app fps which was in reality slower.
-	//could be caused by some sort of deferred drawing?
-
-	nFrameCount++;		// increase the overall frame count
-
-	//setFrameNum(nFrameCount); // get this info to ofUtils for people to access
-
-}
-
-//------------------------------------------------------------
 void rotateMouseXY(ofOrientation orientation, int &x, int &y) {
 	int savedY;
 	switch(orientation) {
@@ -503,6 +530,138 @@ void rotateMouseXY(ofOrientation orientation, int &x, int &y) {
 	}
 }
 
+// ----------------------------------------------------------------------------
+void ofAppEGLWindow::makeSurface(uint32_t _x, uint32_t _y, uint32_t _w, uint32_t _h)
+{
+
+	cout << __PRETTY_FUNCTION__ << " x,y: " << _x << ", " << _y << "  w,h: " << _w << ", " << _h << endl;
+
+	// this code does the main window creation
+	EGLBoolean result;
+
+	static EGL_DISPMANX_WINDOW_T nativeWindow;
+	// our source and destination rect for the screen
+	VC_RECT_T dstRect;
+	VC_RECT_T srcRect;
+
+
+#ifdef RASPBERRY_PI_DO_GLES2
+     static EGLint const context_attributes[] = {
+        EGL_CONTEXT_CLIENT_VERSION, 2,
+        EGL_NONE
+    };
+#else 
+    static EGLint const context_attributes[] = {
+        EGL_CONTEXT_CLIENT_VERSION, 1,
+        EGL_NONE
+    };
+#endif
+
+	// get an EGL display connection
+	m_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+	if(m_display == EGL_NO_DISPLAY)
+	{
+		std::cerr<<"error getting display\n";
+		exit(EXIT_FAILURE);
+	}
+	// initialize the EGL display connection
+	int major,minor;
+
+	result = eglInitialize(m_display, &major, &minor);
+	std::cout<<"EGL init version "<<major<<"."<<minor<<"\n";
+	if(result == EGL_FALSE)
+	{
+		std::cerr<<"error initialising display\n";
+		exit(EXIT_FAILURE);
+	}
+	// get our config from the config class
+	m_config->chooseConfig(m_display);
+	EGLConfig config=m_config->getConfig();
+
+	// bind the OpenGL API to the EGL
+	result = eglBindAPI(EGL_OPENGL_ES_API);
+	if(result == EGL_FALSE)
+	{
+		std::cerr<<"error binding API\n";
+		exit(EXIT_FAILURE);
+	}
+	// create an EGL rendering context
+	m_context = eglCreateContext(m_display, config, EGL_NO_CONTEXT, context_attributes);
+	if(m_context == EGL_NO_CONTEXT)
+	{
+		std::cerr<<"couldn't get a valid context\n";
+		exit(EXIT_FAILURE);
+	}
+	// create an EGL window surface the way this works is we set the dimensions of the srec
+	// and destination rectangles.
+	// if these are the same size there is no scaling, else the window will auto scale
+
+	dstRect.x = _x;
+	dstRect.y = _y;
+	if(m_upscale == false)
+	{
+		dstRect.width = _w;
+		dstRect.height = _h;
+	}
+	else
+	{
+		dstRect.width = m_maxWidth;
+		dstRect.height = m_maxHeight;
+	}
+	srcRect.x = 0;
+	srcRect.y = 0;
+	srcRect.width = _w << 16;
+	srcRect.height = _h << 16;
+
+	// whilst this is mostly taken from demos I will try to explain what it does
+	// there are very few documents on this ;-0
+	// open our display with 0 being the first display, there are also some other versions
+	// of this function where we can pass in a mode however the mode is not documented as
+	// far as I can see
+  	m_dispmanDisplay = vc_dispmanx_display_open(0);
+  	
+  	// now we signal to the video core we are going to start updating the config
+	m_dispmanUpdate = vc_dispmanx_update_start(0);
+
+	// this is the main setup function where we add an element to the display, this is filled in
+	// to the src / dst rectangles
+	m_dispmanElement = vc_dispmanx_element_add ( m_dispmanUpdate, m_dispmanDisplay,
+		0, &dstRect, 0,&srcRect, DISPMANX_PROTECTION_NONE, 0 ,0,DISPMANX_NO_ROTATE);
+
+	// now we have created this element we pass it to the native window structure ready
+	// no create our new EGL surface
+	nativeWindow.element = m_dispmanElement;
+	nativeWindow.width  = _w;
+	nativeWindow.height = _h;
+
+	// we now tell the vc we have finished our update
+	vc_dispmanx_update_submit_sync( m_dispmanUpdate );
+
+	// finally we can create a new surface using this config and window
+	m_surface = eglCreateWindowSurface( m_display, config, &nativeWindow, NULL );
+
+	if ( m_surface == EGL_NO_SURFACE )
+	{
+		cout << "Error!  m_surface == EGL_NO_SURFACE " << __PRETTY_FUNCTION__ << endl;
+		exit(EXIT_FAILURE);		
+	}
+
+//	assert(m_surface != EGL_NO_SURFACE);
+	// connect the context to the surface
+	result = eglMakeCurrent(m_display, m_surface, m_surface, m_context);
+
+	if ( result == EGL_FALSE )
+	{
+		cout << "Error!  result == EGL_FALSE " << __PRETTY_FUNCTION__ << endl;
+		exit(EXIT_FAILURE);		
+	}
+
+//	assert(EGL_FALSE != result);
+	m_activeSurface=true;
+
+}
+
+/*
 //------------------------------------------------------------
 void ofAppEGLWindow::mouse_cb(int button, int state, int x, int y) {
 	rotateMouseXY(orientation, x, y);
@@ -536,7 +695,9 @@ void ofAppEGLWindow::passive_motion_cb(int x, int y) {
 		ofNotifyMouseMoved(x, y);
 	}
 }
+*/
 
+/*
 //------------------------------------------------------------
 void ofAppEGLWindow::dragEvent(char ** names, int howManyFiles, int dragX, int dragY){
 
@@ -552,10 +713,12 @@ void ofAppEGLWindow::dragEvent(char ** names, int howManyFiles, int dragX, int d
 
 	ofNotifyDragEvent(info);
 }
+*/
 
-
+/*
 //------------------------------------------------------------
 void ofAppEGLWindow::idle_cb(void) {
+
 
 	//	thanks to jorge for the fix:
 	//	http://www.openframeworks.cc/forum/viewtopic.php?t=515&highlight=frame+rate
@@ -598,6 +761,7 @@ void ofAppEGLWindow::idle_cb(void) {
 	ofNotifyUpdate();
 
 	glutPostRedisplay();
+
 }
 
 
@@ -636,3 +800,5 @@ void ofAppEGLWindow::entry_cb( int state ) {
 	ofNotifyWindowEntry( state );
 	
 }
+	*/
+

@@ -38,6 +38,7 @@ ifndef ARCH
 	ARCH=$(shell uname -m)
 endif
 
+
 ifeq ($(ARCH),android)
 	include $(OF_ROOT)/libs/openFrameworksCompiled/project/makefileCommon/Makefile.android
 else
@@ -59,7 +60,11 @@ SHELL =  /bin/sh
 NODEPS = clean
 SED_EXCLUDE_FROM_SRC = $(shell echo  $(EXCLUDE_FROM_SOURCE) | sed 's/\,/\\|/g')
 SOURCE_DIRS = $(shell find . -maxdepth 1 -mindepth 1 -type d | grep -v "$(SED_EXCLUDE_FROM_SRC)" | sed s/.\\///)
-SOURCES = $(shell find $(SOURCE_DIRS) -name "*.cpp" -or -name "*.c" -or -name "*.cc" -or -name "*.cxx")
+
+#warning "Raspberry PI"
+#SOURCES = $(shell find $(SOURCE_DIRS) -name "*.cpp" -or -name "*.c" -or -name "*.cc" -or -name "*.cxx")
+SOURCES = $(shell find $(SOURCE_DIRS) -name "*.cpp" | grep -v "ofAppGlutWindow.cpp" | grep -v "ofFmodSoundPlayer.cpp" | grep -v ofQuickTimeGrabber.cpp | grep -v ofQuickTimePlayer.cpp | grep -v ofDirectShowGrabber.cpp) 
+
 OBJFILES = $(patsubst %.c,%.o,$(patsubst %.cpp,%.o,$(patsubst %.cxx,%.o,$(patsubst %.cc,%.o,$(SOURCES)))))
 
 ifneq (,$(USER_SOURCE_DIR))
@@ -94,6 +99,10 @@ endif
 LIB_STATIC += $(shell ls $(OF_ROOT)/libs/*/lib/$(LIBSPATH)/*.a  2> /dev/null | grep -v openFrameworksCompiled | grep -v Poco)
 LIB_SHARED += $(shell ls $(OF_ROOT)/libs/*/lib/$(LIBSPATH)/*.so  2> /dev/null | grep -v openFrameworksCompiled | sed "s/.*\\/lib\([^/]*\)\.so/-l\1/")
 LIB_PATHS_FLAGS = $(shell ls -d $(OF_ROOT)/libs/*/lib/$(LIBSPATH) | sed "s/\(\.*\)/-L\1/")
+
+# Andreas:
+LIB_PATHS_FLAGS += -L../../../../openFrameworks/HIDE/HIDE_COMPILED/kiss/lib/linux
+LIB_PATHS_FLAGS += -L../../../../openFrameworks/HIDE/HIDE_COMPILED/tess2/lib/linux
 
 CFLAGS += -Wall -fexceptions
 CFLAGS += -I.

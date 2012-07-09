@@ -132,6 +132,8 @@ enum ofTargetPlatform{
 		//#include <GL/gl.h>
 		//#include <GL/glx.h>
 
+		#define TARGET_RASPBERRY_PI
+
     // for some reason, this isn't defined at compile time,
     // so this hack let's us work
     // for 99% of the linux folks that are on intel
