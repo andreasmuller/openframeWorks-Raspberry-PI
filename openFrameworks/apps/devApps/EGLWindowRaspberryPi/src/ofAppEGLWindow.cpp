@@ -7,44 +7,10 @@
 #include "ofConstants.h"
 
 #ifdef TARGET_WIN32
-	
 #endif
+
 #ifdef TARGET_OSX
-
 #endif
-
-
-// glut works with static callbacks UGH, so we need static variables here:
-
-static int			windowMode;
-static bool			bNewScreenMode;
-static float		timeNow, timeThen, fps;
-static int			nFramesForFPS;
-static int			nFrameCount;
-static int			buttonInUse;
-static bool			bEnableSetupScreen;
-static bool			bDoubleBuffered; 
-
-
-static bool			bFrameRateSet;
-static int 			millisForFrame;
-static int 			prevMillis;
-static int 			diffMillis;
-
-static float 		frameRate;
-
-static double		lastFrameTime;
-
-static int			requestedWidth;
-static int			requestedHeight;
-static int 			nonFullScreenX;
-static int 			nonFullScreenY;
-static int			windowW;
-static int			windowH;
-static int          nFramesSinceWindowResized;
-static ofOrientation	orientation;
-static ofBaseApp *  ofAppPtr;
-
 
 
 //----------------------------------------------------------
@@ -69,9 +35,13 @@ ofAppEGLWindow::ofAppEGLWindow(){
 	nonFullScreenX		= -1;
 	nonFullScreenY		= -1;
 	lastFrameTime		= 0.0;
-	displayString		= "";
 	orientation			= OF_ORIENTATION_DEFAULT;
 	bDoubleBuffered = true; // LIA
+
+	windowConfigEGL = new ofEGLWindowConfig();
+
+	//windowConfigEGL->setRGBA(5,6,5,0); // TODO: This is not possible yet.
+	windowConfigEGL->setDepth( 16 );	 // TODO: This gets set to 24, maybe 32 bit color and 16 bit depth are not compatible?
 
 }
 
@@ -80,17 +50,8 @@ ofAppEGLWindow::~ofAppEGLWindow()
 {
 	destroySurface();
 	// release the mouse
-	close(m_mouse);
+	close(mouseFilePointer);
 }
-
-//lets you enable alpha blending using a display string like:
-// "rgba double samples>=4 depth" ( mac )
-// "rgb double depth alpha samples>=4" ( some pcs )
-//------------------------------------------------------------
- void ofAppEGLWindow::setGlutDisplayString(string displayStr){
-	displayString = displayStr;
- }
-
 
 void ofAppEGLWindow::setDoubleBuffering(bool _bDoubleBuffered){ 
 	bDoubleBuffered = _bDoubleBuffered;
@@ -99,121 +60,90 @@ void ofAppEGLWindow::setDoubleBuffering(bool _bDoubleBuffered){
 //------------------------------------------------------------
 void ofAppEGLWindow::setupOpenGL(int w, int h, int screenMode){
 
-	cout << __PRETTY_FUNCTION__ << endl;	
-
-	cout << "ofAppEGLWindow Version " << 10 << "." << endl;
-
- 	atexit( bcm_host_deinit);
+	atexit( bcm_host_deinit);
 	bcm_host_init();
-	cout<<"done bcm init" << endl;
 
-	 // toggle we don't yet have an active surface
-	 m_activeSurface = false;
-	 // set default to not upscale the screen resolution
-	 m_upscale = false;
-	 // set our display values to 0 (not once ported to cx11 will use nullptr but
-	 // current pi default compiler doesn't support it yet
-	 m_display = 0;
-	 m_context = 0;
-	 m_surface = 0;
+	// toggle we don't yet have an active surface
+	surfaceIsActive = false;
 
-	 // now find the max display size (we will use this later to assert if the user
-	 // defined sizes are in the correct bounds
-	 int32_t success = 0;
-	 success = graphics_get_display_size(0 , &m_width, &m_height);
-	 if ( success < 0 )
-	 {
-	 	cout << __PRETTY_FUNCTION__ << " Was not able to read display size with graphics_get_display_size" << endl;
-	 }
-	 std::cout<<"max width and height "<<m_width<<" "<<m_height<<"\n";
-	 m_maxWidth=m_width;
-	 m_maxHeight=m_height;
-	
-	m_config = new ofEGLWindowConfig();
+	// set our display values to 0 (not once ported to cx11 will use nullptr but
+	// current pi default compiler doesn't support it yet
+	displayEGL = 0;
+	contextEGL = 0;
+	surfaceEGL = 0;
 
-	m_config->setDepth( 16 );
+	// now find the max display size (we will use this later to assert if the user
+	// defined sizes are in the correct bounds
+	int32_t success = 0;
+	success = graphics_get_display_size(0 , &fullScreenWidth, &fullScreenHeight);
+	if ( success < 0 ) 
+	{
+		cout << __PRETTY_FUNCTION__ << " Was not able to read display size with graphics_get_display_size" << endl;
+	}
+	ofLogNotice() << "Screen max width,height " << fullScreenWidth << ", " << fullScreenHeight << endl;
 
-	m_width  = w;
-	m_height = h;
 
-	 // if we have a user defined config we will use that else we need to create one
-	 //if (_config == 0) { std::cout<<"making new config\n"; m_config= new EGLconfig(); }
-	 //else { m_config=_config; }
+	windowW = w;
+	windowH = h;
+	windowMode = screenMode;
+
+	// if we have a user defined config we will use that else we need to create one
+	//if (_config == 0) { std::cout<<"making new config\n"; windowConfigEGL= new EGLconfig(); }
+	//else { windowConfigEGL=_config; }
 
 	// this code actually creates the surface
-	makeSurface(0,0,m_width,m_height);	 
+	makeSurface(0,0,windowW,windowH);	 
 
 
-    printf("-- From ofAppEGLWindow --------------------------------\n"); 
-    // query egl-specific strings
-    char *egl_vendor 	= (char *)eglQueryString(m_display, EGL_VENDOR);
-    char *egl_version 	= (char *)eglQueryString(m_display, EGL_VERSION);
-    char *egl_apis 		= (char *)eglQueryString(m_display, EGL_CLIENT_APIS);
-    char *egl_exts 		= (char *)eglQueryString(m_display, EGL_EXTENSIONS);
+	printf("-- From ofAppEGLWindow --------------------------------\n"); 
+	// query egl-specific strings
+	char *egl_vendor 	= (char *)eglQueryString(displayEGL, EGL_VENDOR);
+	char *egl_version 	= (char *)eglQueryString(displayEGL, EGL_VERSION);
+	char *egl_apis 		= (char *)eglQueryString(displayEGL, EGL_CLIENT_APIS);
+	char *egl_exts 		= (char *)eglQueryString(displayEGL, EGL_EXTENSIONS);
 
-    printf("EGL\n");
-    printf("  Vendor: %s\n", egl_vendor);
-    printf("  Version: %s\n", egl_version);
-    printf("  Client APIs: %s\n", egl_apis);
-    //printf("  Extensions: %s\n", egl_exts);
+	printf("EGL\n");
+	printf("  Vendor: %s\n", egl_vendor);
+	printf("  Version: %s\n", egl_version);
+	printf("  Client APIs: %s\n", egl_apis);
+	//printf("  Extensions: %s\n", egl_exts);
 
-   	char *vendor 	= (char *)glGetString(GL_VENDOR);
-    char *renderer 	= (char *)glGetString(GL_RENDERER);
-    char *version 	= (char *)glGetString(GL_VERSION);
+	char *vendor 	= (char *)glGetString(GL_VENDOR);
+	char *renderer 	= (char *)glGetString(GL_RENDERER);
+	char *version 	= (char *)glGetString(GL_VERSION);
 
-    printf("OpenGL ES\n");
-    printf("  Vendor: %s\n", vendor);
-    printf("  Renderer: %s\n", renderer);
-    printf("  Version: %s\n", version);
-    printf("--------------------------------------------------------\n");
+	printf("OpenGL ES\n");
+	printf("  Vendor: %s\n", vendor);
+	printf("  Renderer: %s\n", renderer);
+	printf("  Version: %s\n", version);
 
-	windowMode = screenMode;
+	GLint redBits, greenBits, blueBits, alphaBiths, depthBits ;
+
+	glGetIntegerv (GL_RED_BITS, &redBits);
+	glGetIntegerv (GL_GREEN_BITS, &greenBits);
+	glGetIntegerv (GL_BLUE_BITS, &blueBits);
+	glGetIntegerv (GL_ALPHA_BITS, &alphaBiths);	
+	glGetIntegerv(GL_DEPTH_BITS, &depthBits);
+
+	printf("\nContext color RGBA: %d,%d,%d,%d   depth: %d \n", redBits, greenBits, redBits, alphaBiths, depthBits );
+
+	printf("--------------------------------------------------------\n");
+
+
 	bNewScreenMode = true;
-
-	windowW = m_width; //glutGet(GLUT_WINDOW_WIDTH);
-	windowH = m_height; //glutGet(GLUT_WINDOW_HEIGHT);
-
 }
 
 //------------------------------------------------------------
 void ofAppEGLWindow::initializeWindow(){
 
+	// For the time being we will handle mouse input by reading the mouse every frame, TODO: find a better solution
 	oldMouseX = 0;
 	oldMouseY = 0;
 	mouseX = 0; 
 	mouseY = 0;
 
-	m_mouse = open("/dev/input/mouse0",O_RDONLY|O_NONBLOCK);
+	mouseFilePointer = open("/dev/input/mouse0",O_RDONLY|O_NONBLOCK);
 
-    //----------------------
-    // setup the callbacks
-/*
-    glutMouseFunc(mouse_cb);
-    glutMotionFunc(motion_cb);
-    glutPassiveMotionFunc(passive_motion_cb);
-    glutIdleFunc(idle_cb);
-    glutDisplayFunc(display);
-
-    glutKeyboardFunc(keyboard_cb);
-    glutKeyboardUpFunc(keyboard_up_cb);
-    glutSpecialFunc(special_key_cb);
-    glutSpecialUpFunc(special_key_up_cb);
-
-    glutReshapeFunc(resize_cb);
-	glutEntryFunc(entry_cb);
-
-#ifdef TARGET_OSX
-	glutDragEventFunc(dragEvent);
-#endif
-
-    nFramesSinceWindowResized = 0;
-
-    #ifdef TARGET_WIN32
-        //----------------------
-        // this is specific to windows (respond properly to close / destroy)
-        fixCloseWindowOnWin32();
-    #endif
-*/
 }
 
 //------------------------------------------------------------
@@ -233,15 +163,49 @@ void ofAppEGLWindow::runAppViaInfiniteLoop(ofBaseApp * appPtr){
 		display();
 
 	}
-/*
-
-	glutMainLoop();
-*/	
-
 }
 
 //------------------------------------------------------------
 void ofAppEGLWindow::update()
+{
+	handleInput();
+
+	if (nFrameCount != 0 && bFrameRateSet == true){
+		diffMillis = ofGetElapsedTimeMillis() - prevMillis;
+		if (diffMillis > millisForFrame){
+			; // we do nothing, we are already slower than target frame
+		} else {
+			int waitMillis = millisForFrame - diffMillis;
+			#ifdef TARGET_WIN32
+				Sleep(waitMillis);         //windows sleep in milliseconds
+			#else
+				usleep(waitMillis * 1000);   //mac sleep in microseconds - cooler :)
+			#endif
+		}
+	}
+	prevMillis = ofGetElapsedTimeMillis(); // you have to measure here
+
+    // -------------- fps calculation:
+	// theo - please don't mess with this without letting me know.
+	// there was some very strange issues with doing ( timeNow-timeThen ) producing different values to: double diff = timeNow-timeThen;
+	// http://www.openframeworks.cc/forum/viewtopic.php?f=7&t=1892&p=11166#p11166
+
+	timeNow = ofGetElapsedTimef();
+	double diff = timeNow-timeThen;
+	if( diff  > 0.00001 ){
+		fps			= 1.0 / diff;
+		frameRate	*= 0.9f;
+		frameRate	+= 0.1f*fps;
+	 }
+	 lastFrameTime	= diff;
+	 timeThen		= timeNow;
+  	// --------------
+
+	ofNotifyUpdate();
+}
+
+//------------------------------------------------------------
+void ofAppEGLWindow::handleInput()
 {
 	int mouseButtons = readMouse( mouseX, mouseY );
 	//cout << mouseX << ", " << mouseY << "  buttons: " << mouseButtons << endl;
@@ -263,45 +227,7 @@ void ofAppEGLWindow::update()
 		oldMouseY = mouseY;		
 	}
 
-
-	if (nFrameCount != 0 && bFrameRateSet == true){
-		diffMillis = ofGetElapsedTimeMillis() - prevMillis;
-		if (diffMillis > millisForFrame){
-			; // we do nothing, we are already slower than target frame
-		} else {
-			int waitMillis = millisForFrame - diffMillis;
-			#ifdef TARGET_WIN32
-				Sleep(waitMillis);         //windows sleep in milliseconds
-			#else
-				usleep(waitMillis * 1000);   //mac sleep in microseconds - cooler :)
-			#endif
-		}
-	}
-	prevMillis = ofGetElapsedTimeMillis(); // you have to measure here
-
-    // -------------- fps calculation:
-	// theo - now moved from display to idle_cb
-	// discuss here: http://github.com/openframeworks/openFrameworks/issues/labels/0062#issue/187
-	//
-	//
-	// theo - please don't mess with this without letting me know.
-	// there was some very strange issues with doing ( timeNow-timeThen ) producing different values to: double diff = timeNow-timeThen;
-	// http://www.openframeworks.cc/forum/viewtopic.php?f=7&t=1892&p=11166#p11166
-
-	timeNow = ofGetElapsedTimef();
-	double diff = timeNow-timeThen;
-	if( diff  > 0.00001 ){
-		fps			= 1.0 / diff;
-		frameRate	*= 0.9f;
-		frameRate	+= 0.1f*fps;
-	 }
-	 lastFrameTime	= diff;
-	 timeThen		= timeNow;
-  	// --------------
-
-	ofNotifyUpdate();
 }
-
 
 //------------------------------------------------------------
 void ofAppEGLWindow::display(void){
@@ -315,13 +241,11 @@ void ofAppEGLWindow::display(void){
 				nonFullScreenX = -1; //glutGet(GLUT_WINDOW_X);
 				nonFullScreenY = -1; //glutGet(GLUT_WINDOW_Y);
 				//----------------------------------------------------
-
 				//glutFullScreen();
 
 			}else if( windowMode == OF_WINDOW ){
 
 				//glutReshapeWindow(requestedWidth, requestedHeight);
-
 				//----------------------------------------------------
 				// if we have recorded the screen posion, put it there
 				// if not, better to let the system do it (and put it where it wants)
@@ -334,8 +258,6 @@ void ofAppEGLWindow::display(void){
 		}
 	}
 
-	// set viewport, clear the screen
-	//ofViewport(0, 0, glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));		// used to be glViewport( 0, 0, width, height );
 	ofViewport(0, 0, windowW, windowH);
 
 	float * bgPtr = ofBgColorPtr();
@@ -362,26 +284,15 @@ void ofAppEGLWindow::display(void){
 		glFlush();
 	}
     
-
     nFramesSinceWindowResized++;
-
-	//fps calculation moved to idle_cb as we were having fps speedups when heavy drawing was occuring
-	//wasn't reflecting on the actual app fps which was in reality slower.
-	//could be caused by some sort of deferred drawing?
-
 	nFrameCount++;		// increase the overall frame count
-
-	//setFrameNum(nFrameCount); // get this info to ofUtils for people to access
 
 	//cout << __PRETTY_FUNCTION__ << endl;
 }
 
 //------------------------------------------------------------
-void ofAppEGLWindow::swapBuffers() const
-{
-	//cout << __PRETTY_FUNCTION__ << endl;
-
-	eglSwapBuffers(m_display, m_surface);
+void ofAppEGLWindow::swapBuffers() const {
+	eglSwapBuffers(displayEGL, surfaceEGL);
 }
 
 //------------------------------------------------------------
@@ -401,7 +312,7 @@ int ofAppEGLWindow::getFrameNum(){
 
 //------------------------------------------------------------
 void ofAppEGLWindow::setWindowTitle(string title){
-	//glutSetWindowTitle(title.c_str());
+	ofLogNotice() << " ofAppEGLWindow::setWindowTitle not yet implemented.";
 }
 
 //------------------------------------------------------------
@@ -418,9 +329,7 @@ ofPoint ofAppEGLWindow::getWindowPosition(){
 
 //------------------------------------------------------------
 ofPoint ofAppEGLWindow::getScreenSize(){
-	int width = -1;
-	int height = -1;
-	return ofPoint(width, height,0);
+	return ofPoint(fullScreenWidth, fullScreenHeight,0);
 }
 
 //------------------------------------------------------------
@@ -564,7 +473,6 @@ void rotateMouseXY(ofOrientation orientation, int &x, int &y) {
 // ----------------------------------------------------------------------------
 void ofAppEGLWindow::makeSurface(uint32_t _x, uint32_t _y, uint32_t _w, uint32_t _h)
 {
-
 	//cout << __PRETTY_FUNCTION__ << " x,y: " << _x << ", " << _y << "  w,h: " << _w << ", " << _h << endl;
 
 	// this code does the main window creation
@@ -589,56 +497,62 @@ void ofAppEGLWindow::makeSurface(uint32_t _x, uint32_t _y, uint32_t _w, uint32_t
 #endif
 
 	// get an EGL display connection
-	m_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-	if(m_display == EGL_NO_DISPLAY)
+	displayEGL = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+	if(displayEGL == EGL_NO_DISPLAY)
 	{
-		std::cerr<<"error getting display\n";
+		ofLogError() << "ofAppEGLWindow::makeSurface error getting display";
 		exit(EXIT_FAILURE);
 	}
 	// initialize the EGL display connection
 	int major,minor;
 
-	result = eglInitialize(m_display, &major, &minor);
-	std::cout<<"EGL init version "<<major<<"."<<minor<<"\n";
+	result = eglInitialize(displayEGL, &major, &minor);
+	ofLogNotice() << "EGL init version "<<major<<"."<<minor<<"\n";
 	if(result == EGL_FALSE)
 	{
-		std::cerr<<"error initialising display\n";
+		ofLogError() << "ofAppEGLWindow::makeSurface error initialising display";
 		exit(EXIT_FAILURE);
 	}
 	// get our config from the config class
-	m_config->chooseConfig(m_display);
-	EGLConfig config=m_config->getConfig();
+	windowConfigEGL->chooseConfig(displayEGL);
+	EGLConfig config = windowConfigEGL->getConfig();
 
 	// bind the OpenGL API to the EGL
 	result = eglBindAPI(EGL_OPENGL_ES_API);
 	if(result == EGL_FALSE)
 	{
-		std::cerr<<"error binding API\n";
+		ofLogError() << "ofAppEGLWindow::makeSurface error binding API";
 		exit(EXIT_FAILURE);
 	}
 	// create an EGL rendering context
-	m_context = eglCreateContext(m_display, config, EGL_NO_CONTEXT, NULL);
-	if(m_context == EGL_NO_CONTEXT)
+	contextEGL = eglCreateContext(displayEGL, config, EGL_NO_CONTEXT, context_attributes );
+	if(contextEGL == EGL_NO_CONTEXT)
 	{
-		std::cerr<<"couldn't get a valid context\n";
+		ofLogError() << "ofAppEGLWindow::makeSurface could not get a valid context";
 		exit(EXIT_FAILURE);
 	}
+
 	// create an EGL window surface the way this works is we set the dimensions of the srec
 	// and destination rectangles.
 	// if these are the same size there is no scaling, else the window will auto scale
 
 	dstRect.x = _x;
 	dstRect.y = _y;
-	if(m_upscale == false)
+
+	// If we are in OF_WINDOW mode, src and dst rects are the same, 
+	// otherwise stretch result to full screen, presumably this is done by the scaler 
+	// at no performance cost, but look into this.
+	if( windowMode == OF_WINDOW ) 
 	{
 		dstRect.width = _w;
 		dstRect.height = _h;
 	}
 	else
 	{
-		dstRect.width = m_maxWidth;
-		dstRect.height = m_maxHeight;
+		dstRect.width = fullScreenWidth;
+		dstRect.height = fullScreenHeight;
 	}
+
 	srcRect.x = 0;
 	srcRect.y = 0;
 	srcRect.width = _w << 16;
@@ -669,85 +583,61 @@ void ofAppEGLWindow::makeSurface(uint32_t _x, uint32_t _y, uint32_t _w, uint32_t
 	vc_dispmanx_update_submit_sync( m_dispmanUpdate );
 
 	// finally we can create a new surface using this config and window
-	m_surface = eglCreateWindowSurface( m_display, config, &nativeWindow, NULL );
+	surfaceEGL = eglCreateWindowSurface( displayEGL, config, &nativeWindow, NULL );
 
-	if ( m_surface == EGL_NO_SURFACE )
+	if ( surfaceEGL == EGL_NO_SURFACE )
 	{
-		cout << "Error!  m_surface == EGL_NO_SURFACE, eglCreateWindowSurface " << endl;
+		ofLogError() << "Error!  surfaceEGL == EGL_NO_SURFACE, eglCreateWindowSurface " << endl;
 		exit(EXIT_FAILURE);		
 	}
 
-//	assert(m_surface != EGL_NO_SURFACE);
 	// connect the context to the surface
-	result = eglMakeCurrent(m_display, m_surface, m_surface, m_context);
+	result = eglMakeCurrent(displayEGL, surfaceEGL, surfaceEGL, contextEGL);
 
 	if ( result == EGL_FALSE )
 	{
-		cout << "Error!  result == EGL_FALSE, eglMakeCurrent " << endl;
+		ofLogError() << "Error!  result == EGL_FALSE, eglMakeCurrent " << endl;
 		exit(EXIT_FAILURE);		
 	}
 
 //	assert(EGL_FALSE != result);
-	m_activeSurface = true;
-
-    printf("-- From ofAppEGLWindow --------------------------------\n"); 
-    // query egl-specific strings
-    char *egl_vendor 	= (char *)eglQueryString(m_display, EGL_VENDOR);
-    char *egl_version 	= (char *)eglQueryString(m_display, EGL_VERSION);
-    char *egl_apis 		= (char *)eglQueryString(m_display, EGL_CLIENT_APIS);
-    char *egl_exts 		= (char *)eglQueryString(m_display, EGL_EXTENSIONS);
-
-    printf("EGL\n");
-    printf("  Vendor: %s\n", egl_vendor);
-    printf("  Version: %s\n", egl_version);
-    printf("  Client APIs: %s\n", egl_apis);
-    printf("  Extensions: %s\n", egl_exts);
-
-   	char *vendor 	= (char *)glGetString(GL_VENDOR);
-    char *renderer 	= (char *)glGetString(GL_RENDERER);
-    char *version 	= (char *)glGetString(GL_VERSION);
-
-    printf("OpenGL ES\n");
-    printf("  Vendor: %s\n", vendor);
-    printf("  Renderer: %s\n", renderer);
-    printf("  Version: %s\n", version);
-    printf("--------------------------------------------------------\n");
+	surfaceIsActive = true;
 
 }
 
 //------------------------------------------------------------
 void ofAppEGLWindow::destroySurface()
 {
-	if(m_activeSurface == true)
+	if(surfaceIsActive == true)
 	{
-		eglSwapBuffers(m_display, m_surface);
+		eglSwapBuffers(displayEGL, surfaceEGL);
 		// here we free up the context and display we made earlier
-		eglMakeCurrent( m_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
-		eglDestroySurface( m_display, m_surface );
-		eglDestroyContext( m_display, m_context );
-		eglTerminate( m_display );
-		m_activeSurface=false;
+		eglMakeCurrent( displayEGL, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT );
+		eglDestroySurface( displayEGL, surfaceEGL );
+		eglDestroyContext( displayEGL, contextEGL );
+		eglTerminate( displayEGL );
+		surfaceIsActive=false;
 	}
 }
 
 //------------------------------------------------------------
 int ofAppEGLWindow::readMouse(int &_x, int &_y)
 {
-	static int x=m_width, y=m_height;
+	static int x=windowW, y=windowH;
 	const int XSIGN = 1<<4, YSIGN = 1<<5;
-	if (m_mouse>=0)
+	if (mouseFilePointer>=0)
 	{
 		struct {char buttons, dx, dy; } m;
 		while (1)
 		{
-			int bytes = read(m_mouse, &m, sizeof m);
+			int bytes = read(mouseFilePointer, &m, sizeof m);
 
 			if (bytes < (int)sizeof m) goto _exit;
 			if (m.buttons&8)
 			{
 				break; // This bit should always be set
 			}
-			read(m_mouse, &m, 1); // Try to sync up again
+			read(mouseFilePointer, &m, 1); // Try to sync up again
 		}
 
 
@@ -762,8 +652,8 @@ int ofAppEGLWindow::readMouse(int &_x, int &_y)
 		y-=256;
 	if (x<0) x=0;
 	if (y<0) y=0;
-	if (x>m_width) x=m_width;
-	if (y>m_height) y=m_height;
+	if (x>windowW) x=windowW;
+	if (y>windowH) y=windowH;
 	}
 
 	_exit:

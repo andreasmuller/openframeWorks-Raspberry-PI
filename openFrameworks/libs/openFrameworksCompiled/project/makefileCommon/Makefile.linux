@@ -12,11 +12,18 @@ else
 	endif
 endif
 
-INCLUDES_FLAGS += -I$(OF_ROOT)/libs/glu/include
+#INCLUDES_FLAGS += -I$(OF_ROOT)/libs/glu/include
+#INCLUDES_FLAGS += -I/opt/vc/include/  
+#INCLUDES_FLAGS += -I/opt/vc/lib
+#INCLUDES_FLAGS += -I/usr/include
+#INCLUDES_FLAGS += $(shell pkg-config gl glew glu gstreamer-0.10 gstreamer-video-0.10 gstreamer-base-0.10 libudev cairo --cflags)
+
+#Andreas:
+#INCLUDES_FLAGS += -I$(OF_ROOT)/libs/glu/include
 INCLUDES_FLAGS += -I/opt/vc/include/  
 INCLUDES_FLAGS += -I/opt/vc/lib
 INCLUDES_FLAGS += -I/usr/include
-INCLUDES_FLAGS += $(shell pkg-config gl glew glu gstreamer-0.10 gstreamer-video-0.10 gstreamer-base-0.10 libudev cairo --cflags)
+INCLUDES_FLAGS += $(shell pkg-config gstreamer-0.10 gstreamer-video-0.10 gstreamer-base-0.10 libudev cairo --cflags)
 
 #check if gtk exists and add it
 GTK = $(shell pkg-config gtk+-2.0 --exists; echo $$?)
@@ -33,8 +40,17 @@ ifeq ($(MPG123),0)
 endif
 
 LDFLAGS = -Wl,-rpath=./libs 
-SYSTEMLIBS += $(shell pkg-config jack glew gstreamer-0.10 gstreamer-video-0.10 gstreamer-base-0.10 gstreamer-app-0.10 libudev cairo --libs)
-SYSTEMLIBS += -lglut -lGL -lasound -lopenal -lsndfile -lvorbis -lFLAC -logg -lfreeimage -L/opt/vc/lib -lGLESv2 -lEGL -lm -lbcm_host
+
+#SYSTEMLIBS += $(shell pkg-config jack glew gstreamer-0.10 gstreamer-video-0.10 gstreamer-base-0.10 gstreamer-app-0.10 libudev cairo --libs)
+
+#Andreas:
+SYSTEMLIBS += $(shell pkg-config jack gstreamer-0.10 gstreamer-video-0.10 gstreamer-base-0.10 gstreamer-app-0.10 libudev cairo --libs)
+
+#SYSTEMLIBS += -lglut -lGL -lasound -lopenal -lsndfile -lvorbis -lFLAC -logg -lfreeimage -L/opt/vc/lib -lGLESv2 -lEGL -lm -lbcm_host
+
+#Andreas
+SYSTEMLIBS += -lasound -lopenal -lsndfile -lvorbis -lFLAC -logg -lfreeimage -L/opt/vc/lib -lGLESv2 -lEGL -lm -lbcm_host
+
 SYSTEMLIBS += -lPocoNet -lPocoUtil -lPocoXML -lPocoFoundation -ltess2 -lkiss
 #LIB_STATIC += $(OF_ROOT)/libs/poco/lib/$(LIBSPATH)/libPocoNet.a $(OF_ROOT)/libs/poco/lib/$(LIBSPATH)/libPocoXML.a $(OF_ROOT)/libs/poco/lib/$(LIBSPATH)/libPocoUtil.a $(OF_ROOT)/libs/poco/lib/$(LIBSPATH)/libPocoFoundation.a
 ifeq ($(findstring Debug,$(MAKECMDGOALS)),Debug)

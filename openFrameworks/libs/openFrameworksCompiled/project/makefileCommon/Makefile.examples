@@ -109,7 +109,7 @@ CFLAGS += -I.
 CFLAGS += $(INCLUDES_FLAGS)
 CFLAGS += $(CORE_INCLUDE_FLAGS)
 
-# Andreas, turn off warning for 'note: the mangling of va_list has changed in GCC 4.4'
+# Andreas, turn off error for 'note: the mangling of va_list has changed in GCC 4.4'
 CFLAGS += -Wno-psabi
 
 ifeq ($(findstring Debug,$(TARGET_NAME)),Debug)
