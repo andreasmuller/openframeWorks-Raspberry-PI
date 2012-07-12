@@ -13,7 +13,11 @@
 #include <EGL/eglext.h>
 
 // just setting this is not going to work at the moment, we need a GL ES 2.0 openFrameworks Renderer as well
-//#define RASPBERRY_PI_DO_GLES2 0
+//#define RASPBERRY_PI_DO_GLES2 1
+
+// Do we want to run under X11 or not?
+//#define RASPBERRY_PI_X11 1
+
 
 #ifdef RASPBERRY_PI_DO_GLES2
     #include <GLES2/gl2.h>
@@ -28,6 +32,14 @@
 	#include <unistd.h>
 	#include <fcntl.h>
 //#endif
+
+#ifdef RASPBERRY_PI_X11
+	#include  <X11/Xlib.h>
+	#include  <X11/Xatom.h>
+	#include  <X11/Xutil.h>
+#endif
+
+
 
 class ofBaseApp;
 class ofEGLWindowConfig;
@@ -104,7 +116,7 @@ protected:
 	/// Param in: _y the top origin of the screen
 	/// Param in: _w the width  of the screen
 	/// Param in: _h the height of the screen
-	void 		makeSurface( uint32_t _x, uint32_t _y, uint32_t _w, uint32_t _h );
+	void 		makeContext();
 
 	string 		eglErrorToString( EGLint _err );
 
@@ -137,9 +149,12 @@ protected:
 	ofOrientation	orientation;
 	ofBaseApp*  ofAppPtr;
 
-
 	/// screen/monitor width reported from EGL
-	uint32_t 	fullScreenWidth, fullScreenHeight;
+	uint32_t 	monitorWidth, monitorHeight;
+
+	// our source and destination rect for the screen
+	VC_RECT_T	dstRect;
+	VC_RECT_T	srcRect;
 
 	/// the display
 	EGLDisplay 	displayEGL;
@@ -153,12 +168,22 @@ protected:
 	/// our config either created by the user and passed in or a default one will be created for us
 	ofEGLWindowConfig *windowConfigEGL;
 
+	EGLNativeWindowType __win;
+
+	EGL_DISPMANX_WINDOW_T nativeWindow;
+
 	/// vc display manager element
 	DISPMANX_ELEMENT_HANDLE_T m_dispmanElement;
 	/// vc display manager display structure
 	DISPMANX_DISPLAY_HANDLE_T m_dispmanDisplay;
 	/// vc display manager update structure
 	DISPMANX_UPDATE_HANDLE_T m_dispmanUpdate;
+
+#ifdef RASPBERRY_PI_X11
+	Display* __x_display;
+	Window __eventWin;
+#endif
+
 
  	/// flag to indicate if the surface has been created
  	bool 		surfaceIsActive;
@@ -167,6 +192,9 @@ protected:
 	int 		mouseFilePointer;
 	int 		oldMouseX, oldMouseY;
 	int 		mouseX, mouseY;		 
+
+	bool 		__keys[256];
+	int 		__mouse[3];
 };
 
 

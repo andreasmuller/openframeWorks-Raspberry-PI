@@ -38,6 +38,10 @@ ofAppEGLWindow::ofAppEGLWindow(){
 	orientation			= OF_ORIENTATION_DEFAULT;
 	bDoubleBuffered = true; // LIA
 
+	for( int i = 0; i < 256; i++ ) 	__keys[i]  = false;
+	for( int i = 0; i < 3; i++ ) 	__mouse[i] = 0;	
+
+
 	windowConfigEGL = new ofEGLWindowConfig();
 
 	//windowConfigEGL->setRGBA(5,6,5,0); // TODO: This is not possible yet.
@@ -49,13 +53,27 @@ ofAppEGLWindow::ofAppEGLWindow(){
 ofAppEGLWindow::~ofAppEGLWindow()
 {
 	destroySurface();
+
+#ifdef RASPBERRY_PI_X11
+
+#ifdef __FOR_RPi__
+    XDestroyWindow(__x_display, __eventWin);	// on the pi win is dummy "context" window
+    XCloseDisplay(__x_display);
+#endif	
+
+#else
 	// release the mouse
 	close(mouseFilePointer);
+#endif
+
+
 }
 
+//------------------------------------------------------------
 void ofAppEGLWindow::setDoubleBuffering(bool _bDoubleBuffered){ 
 	bDoubleBuffered = _bDoubleBuffered;
 }
+
 
 //------------------------------------------------------------
 void ofAppEGLWindow::setupOpenGL(int w, int h, int screenMode){
@@ -65,6 +83,7 @@ void ofAppEGLWindow::setupOpenGL(int w, int h, int screenMode){
 
 	// toggle we don't yet have an active surface
 	surfaceIsActive = false;
+	__win = NULL;
 
 	// set our display values to 0 (not once ported to cx11 will use nullptr but
 	// current pi default compiler doesn't support it yet
@@ -75,24 +94,139 @@ void ofAppEGLWindow::setupOpenGL(int w, int h, int screenMode){
 	// now find the max display size (we will use this later to assert if the user
 	// defined sizes are in the correct bounds
 	int32_t success = 0;
-	success = graphics_get_display_size(0 , &fullScreenWidth, &fullScreenHeight);
+	success = graphics_get_display_size(0 , &monitorWidth, &monitorHeight);
 	if ( success < 0 ) 
 	{
 		cout << __PRETTY_FUNCTION__ << " Was not able to read display size with graphics_get_display_size" << endl;
 	}
-	ofLogNotice() << "Screen max width,height " << fullScreenWidth << ", " << fullScreenHeight << endl;
+	ofLogNotice() << "Screen max width,height " << monitorWidth << ", " << monitorHeight << endl;
 
 
 	windowW = w;
 	windowH = h;
 	windowMode = screenMode;
 
-	// if we have a user defined config we will use that else we need to create one
-	//if (_config == 0) { std::cout<<"making new config\n"; windowConfigEGL= new EGLconfig(); }
-	//else { windowConfigEGL=_config; }
+	int windowX = 0;
+	int windowY = 0;	
+
+	dstRect.x = windowX;
+	dstRect.y = windowY;
+
+	// If we are in OF_WINDOW mode, src and dst rects are the same, 
+	// otherwise stretch result to full screen, presumably this is done by the scaler 
+	// at no performance cost, but look into this.
+	if( windowMode == OF_WINDOW ) 
+	{
+		dstRect.width = windowW;
+		dstRect.height = windowH;
+	}
+	else
+	{
+		dstRect.width  = monitorWidth;
+		dstRect.height = monitorHeight;
+	}
+
+	srcRect.x = 0;
+	srcRect.y = 0;
+	srcRect.width  = windowW << 16;
+	srcRect.height = windowH << 16;
+
+#ifdef RASPBERRY_PI_X11
+
+    __x_display = XOpenDisplay(NULL);	// open the standard display (the primary screen)
+    if (__x_display == NULL) {
+        ofLogError() << "cannot connect to X server." << endl;
+    }
+
+    Window root = DefaultRootWindow(__x_display);	// get the root window (usually the whole screen)
+
+    XSetWindowAttributes swa;
+    swa.event_mask =
+        ExposureMask | PointerMotionMask | KeyPressMask | KeyReleaseMask;
+
+    int s = DefaultScreen(__x_display);
+    __eventWin = XCreateSimpleWindow(__x_display, root,
+                                     0, 0, monitorWidth, monitorHeight, 1,
+                                     BlackPixel(__x_display, s),
+                                     WhitePixel(__x_display, s));
+    XSelectInput(__x_display, __eventWin, ExposureMask |
+                 KeyPressMask | KeyReleaseMask |
+                 ButtonPressMask | ButtonReleaseMask | PointerMotionMask);
+
+    XSetWindowAttributes xattr;
+    Atom atom;
+    int one = 1;
+
+    xattr.override_redirect = False;
+    XChangeWindowAttributes(__x_display, __eventWin, CWOverrideRedirect,
+                            &xattr);
+
+    XWMHints hints;
+    hints.input = True;
+    hints.flags = InputHint;
+    XSetWMHints(__x_display, __eventWin, &hints);
+
+    XMapWindow(__x_display, __eventWin);	// make the window visible on the screen
+    XStoreName(__x_display, __eventWin, "Event trap");	// give the window a name
+
+    // we have to be full screen to capture all mouse events
+    // TODO consider using warp mouse to report relative motions
+    // instead of absolute...
+
+    XFlush(__x_display);	// you have to flush or bcm seems to prevent window coming up?
+
+    Atom wmState = XInternAtom(__x_display, "_NET_WM_STATE", False);
+    Atom fullScreen = XInternAtom(__x_display,
+                                  "_NET_WM_STATE_FULLSCREEN", False);
+    XEvent xev;
+    xev.xclient.type = ClientMessage;
+    xev.xclient.serial = 0;
+    xev.xclient.send_event = True;
+    xev.xclient.window = __eventWin;
+    xev.xclient.message_type = wmState;
+    xev.xclient.format = 32;
+    xev.xclient.data.l[0] = 1;	//_NET_WM_STATE_ADD
+    xev.xclient.data.l[1] = fullScreen;
+    xev.xclient.data.l[2] = 0;
+    XSendEvent(__x_display, root, False,
+               SubstructureRedirectMask | SubstructureNotifyMask, &xev);
+
+    XFlush(__x_display);	// you have to flush or bcm seems to prevent window coming up?
+
+#endif
+
+
+	// whilst this is mostly taken from demos I will try to explain what it does
+	// there are very few documents on this ;-0
+	// open our display with 0 being the first display, there are also some other versions
+	// of this function where we can pass in a mode however the mode is not documented as
+	// far as I can see
+  	m_dispmanDisplay = vc_dispmanx_display_open(0);
+  	
+  	// now we signal to the video core we are going to start updating the config
+	m_dispmanUpdate = vc_dispmanx_update_start(0);
+
+	// this is the main setup function where we add an element to the display, this is filled in
+	// to the src / dst rectangles
+	m_dispmanElement = vc_dispmanx_element_add ( m_dispmanUpdate, m_dispmanDisplay,
+		0, &dstRect, 0,&srcRect, DISPMANX_PROTECTION_NONE, 0 ,0,DISPMANX_NO_ROTATE);
+
+	// now we have created this element we pass it to the native window structure ready
+	// no create our new EGL surface
+	nativeWindow.element = m_dispmanElement;
+	nativeWindow.width  = windowW;
+	nativeWindow.height = windowH;
+
+	// we now tell the vc we have finished our update
+	vc_dispmanx_update_submit_sync( m_dispmanUpdate );
+
+	// If we didn't set it in the 'for X11' block
+	if( __win == NULL ) {
+		__win = &nativeWindow;
+	}
 
 	// this code actually creates the surface
-	makeSurface(0,0,windowW,windowH);	 
+	makeContext();	 
 
 
 	printf("-- From ofAppEGLWindow --------------------------------\n"); 
@@ -142,8 +276,12 @@ void ofAppEGLWindow::initializeWindow(){
 	mouseX = 0; 
 	mouseY = 0;
 
+#ifdef RASPBERRY_PI_X11
+
+#else
 	mouseFilePointer = open("/dev/input/mouse0",O_RDONLY|O_NONBLOCK);
 
+#endif
 }
 
 //------------------------------------------------------------
@@ -204,9 +342,117 @@ void ofAppEGLWindow::update()
 	ofNotifyUpdate();
 }
 
+/*
+function xkey_to_scancode( XKey, KeyCode : Integer ) : Byte;
+begin
+  case XKey of
+    XK_Pause:        Result := K_PAUSE;
+
+    XK_Up:           Result := K_UP;
+    XK_Down:         Result := K_DOWN;
+    XK_Left:         Result := K_LEFT;
+    XK_Right:        Result := K_RIGHT;
+
+    XK_Insert:       Result := K_INSERT;
+    XK_Delete:       Result := K_DELETE;
+    XK_Home:         Result := K_HOME;
+    XK_End:          Result := K_END;
+    XK_Page_Up:      Result := K_PAGEUP;
+    XK_Page_Down:    Result := K_PAGEDOWN;
+
+    XK_Control_R:    Result := K_CTRL_R;
+    XK_Alt_R:        Result := K_ALT_R;
+    XK_Super_L:      Result := K_SUPER_L;
+    XK_Super_R:      Result := K_SUPER_R;
+    XK_Menu:         Result := K_APP_MENU;
+
+    XK_KP_Divide:    Result := K_KP_DIV;
+  else
+    Result := ( KeyCode - 8 ) and $FF;
+  end;
+end;
+
+// Somewhere in code
+xkey_to_scancode( XLookupKeysym( @event.xkey, 0 ), event.xkey.keycode );
+*/
+
 //------------------------------------------------------------
 void ofAppEGLWindow::handleInput()
 {
+
+#ifdef RASPBERRY_PI_X11
+
+    XEvent event;
+
+    //if(__rel_mouse) {
+    //    __mouse[0]=0;
+    //    __mouse[1]=0;
+    //}
+    
+    while (XEventsQueued(__x_display, QueuedAfterReading)) 
+    {
+        XNextEvent(__x_display, &event);
+        
+        switch (event.type) 
+        {
+
+        case KeyPress:
+            __keys[event.xkey.keycode & 0xff] = true;
+            printf("key down = %i\n",event.xkey.keycode & 0xff);
+            break;
+
+        case KeyRelease:
+            __keys[event.xkey.keycode & 0xff] = false;
+            printf("key up = %i\n",event.xkey.keycode & 0xff);            
+            break;
+
+        case MotionNotify:
+            //if (__rel_mouse) {
+            //    __mouse[0] = event.xbutton.x-(monitorWidth/2.0);
+            //    __mouse[1] = event.xbutton.y-(monitorHeight/2.0);
+            //} else {
+                __mouse[0] = event.xbutton.x;
+                __mouse[1] = event.xbutton.y;
+            //}
+            printf("mouse %i,%i\n",__mouse[0],__mouse[1]);
+            break;
+
+        case ButtonPress:
+            __mouse[2] =
+                __mouse[2] | (int)pow(2, event.xbutton.button - 1);
+
+            cout << "Mouse button press " << __mouse[2] << "  " << event.xbutton.button << endl;
+
+
+            break;
+        case ButtonRelease:
+            __mouse[2] =
+                __mouse[2] & (int)(255 -
+                                   pow(2,
+                                       event.xbutton.button - 1));
+
+            cout << "Mouse button release " << __mouse[2] << "  " << event.xbutton.button << endl;
+
+            break;
+
+        }
+
+        /*
+        if(__rel_mouse) {  // rel mode test here
+
+            XSelectInput(__x_display, __eventWin, NoEventMask);
+            XWarpPointer(__x_display, None, __eventWin, 0, 0, 0, 0, __display_width/2.0, __display_height/2.0);
+            XFlush(__x_display);
+            XSelectInput(__x_display, __eventWin, ExposureMask |
+                         KeyPressMask | KeyReleaseMask |
+                         ButtonPressMask | ButtonReleaseMask | PointerMotionMask);
+            XFlush(__x_display);
+        }
+        */
+    }
+
+#else
+
 	int mouseButtons = readMouse( mouseX, mouseY );
 	//cout << mouseX << ", " << mouseY << "  buttons: " << mouseButtons << endl;
 
@@ -226,6 +472,7 @@ void ofAppEGLWindow::handleInput()
 		oldMouseX = mouseX;
 		oldMouseY = mouseY;		
 	}
+#endif	
 
 }
 
@@ -329,7 +576,7 @@ ofPoint ofAppEGLWindow::getWindowPosition(){
 
 //------------------------------------------------------------
 ofPoint ofAppEGLWindow::getScreenSize(){
-	return ofPoint(fullScreenWidth, fullScreenHeight,0);
+	return ofPoint(monitorWidth, monitorHeight,0);
 }
 
 //------------------------------------------------------------
@@ -471,18 +718,12 @@ void rotateMouseXY(ofOrientation orientation, int &x, int &y) {
 }
 
 // ----------------------------------------------------------------------------
-void ofAppEGLWindow::makeSurface(uint32_t _x, uint32_t _y, uint32_t _w, uint32_t _h)
+void ofAppEGLWindow::makeContext()
 {
 	//cout << __PRETTY_FUNCTION__ << " x,y: " << _x << ", " << _y << "  w,h: " << _w << ", " << _h << endl;
 
 	// this code does the main window creation
 	EGLBoolean result;
-
-	static EGL_DISPMANX_WINDOW_T nativeWindow;
-	// our source and destination rect for the screen
-	VC_RECT_T dstRect;
-	VC_RECT_T srcRect;
-
 
 #ifdef RASPBERRY_PI_DO_GLES2
      static EGLint const context_attributes[] = {
@@ -531,56 +772,6 @@ void ofAppEGLWindow::makeSurface(uint32_t _x, uint32_t _y, uint32_t _w, uint32_t
 		ofLogError() << "ofAppEGLWindow::makeSurface could not get a valid context";
 		exit(EXIT_FAILURE);
 	}
-
-	// create an EGL window surface the way this works is we set the dimensions of the srec
-	// and destination rectangles.
-	// if these are the same size there is no scaling, else the window will auto scale
-
-	dstRect.x = _x;
-	dstRect.y = _y;
-
-	// If we are in OF_WINDOW mode, src and dst rects are the same, 
-	// otherwise stretch result to full screen, presumably this is done by the scaler 
-	// at no performance cost, but look into this.
-	if( windowMode == OF_WINDOW ) 
-	{
-		dstRect.width = _w;
-		dstRect.height = _h;
-	}
-	else
-	{
-		dstRect.width = fullScreenWidth;
-		dstRect.height = fullScreenHeight;
-	}
-
-	srcRect.x = 0;
-	srcRect.y = 0;
-	srcRect.width = _w << 16;
-	srcRect.height = _h << 16;
-
-	// whilst this is mostly taken from demos I will try to explain what it does
-	// there are very few documents on this ;-0
-	// open our display with 0 being the first display, there are also some other versions
-	// of this function where we can pass in a mode however the mode is not documented as
-	// far as I can see
-  	m_dispmanDisplay = vc_dispmanx_display_open(0);
-  	
-  	// now we signal to the video core we are going to start updating the config
-	m_dispmanUpdate = vc_dispmanx_update_start(0);
-
-	// this is the main setup function where we add an element to the display, this is filled in
-	// to the src / dst rectangles
-	m_dispmanElement = vc_dispmanx_element_add ( m_dispmanUpdate, m_dispmanDisplay,
-		0, &dstRect, 0,&srcRect, DISPMANX_PROTECTION_NONE, 0 ,0,DISPMANX_NO_ROTATE);
-
-	// now we have created this element we pass it to the native window structure ready
-	// no create our new EGL surface
-	nativeWindow.element = m_dispmanElement;
-	nativeWindow.width  = _w;
-	nativeWindow.height = _h;
-
-	// we now tell the vc we have finished our update
-	vc_dispmanx_update_submit_sync( m_dispmanUpdate );
 
 	// finally we can create a new surface using this config and window
 	surfaceEGL = eglCreateWindowSurface( displayEGL, config, &nativeWindow, NULL );
