@@ -399,11 +399,17 @@ void ofAppEGLWindow::handleInput()
         case KeyPress:
             __keys[event.xkey.keycode & 0xff] = true;
             printf("key down = %i\n",event.xkey.keycode & 0xff);
+
+			ofNotifyKeyPressed( event.xkey.keycode & 0xff );
+
             break;
 
         case KeyRelease:
             __keys[event.xkey.keycode & 0xff] = false;
-            printf("key up = %i\n",event.xkey.keycode & 0xff);            
+            printf("key up = %i\n",event.xkey.keycode & 0xff);           
+
+			ofNotifyKeyReleased( event.xkey.keycode & 0xff );
+
             break;
 
         case MotionNotify:
@@ -414,7 +420,13 @@ void ofAppEGLWindow::handleInput()
                 __mouse[0] = event.xbutton.x;
                 __mouse[1] = event.xbutton.y;
             //}
-            printf("mouse %i,%i\n",__mouse[0],__mouse[1]);
+
+			ofNotifyMouseMoved(__mouse[0], __mouse[1]);
+
+			// Check if we are holding down a mouse button, then do a drag event
+
+            //printf("mouse %i,%i\n",__mouse[0],__mouse[1]);
+
             break;
 
         case ButtonPress:

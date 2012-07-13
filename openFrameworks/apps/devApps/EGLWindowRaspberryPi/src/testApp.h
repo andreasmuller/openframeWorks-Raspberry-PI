@@ -1,35 +1,13 @@
 #pragma once
 
-//--------------------------------------------------------------
-//
-//
-// ADVANCED 3D EXAMPLE
-//		ofNode3d, ofCamera, ofEasyCam
-//
-//
-//--------------------------------------------------------------
-
-
 #include "ofMain.h"
 
-// Custom objects for this example
-#include "Swarm.h"
-#include "Grid.h"
-#include "OrthoCamera.h"
-
-#define N_CAMERAS 4
-
-class testApp : public ofBaseApp {
-
+class testApp : public ofBaseApp{
 	public:
 		void setup();
 		void update();
 		void draw();
-
-		void setupViewports();
-		void drawScene(int iCameraDraw);
-		void updateMouseRay();
-
+		
 		void keyPressed(int key);
 		void keyReleased(int key);
 		void mouseMoved(int x, int y);
@@ -37,28 +15,13 @@ class testApp : public ofBaseApp {
 		void mousePressed(int x, int y, int button);
 		void mouseReleased(int x, int y, int button);
 		void windowResized(int w, int h);
+		void dragEvent(ofDragInfo dragInfo);
+		void gotMessage(ofMessage msg);
 
-		//cameras (all these inherit from ofCamera)
-		ofEasyCam camEasyCam;
-		orthoCamera camFront;
-		orthoCamera camTop;
-		orthoCamera camLeft;
+		ofTrueTypeFont 			myFont;
 
-		//cameras have parent?
-		bool bCamParent;
-
-		//camera pointers
-		ofCamera * cameras[N_CAMERAS];
-		int iMainCamera;
-
-		//viewports
-		ofRectangle viewMain;
-		ofRectangle viewGrid[N_CAMERAS];
-
-		//my custom node
-		swarm nodeSwarm;
-		grid nodeGrid;
-
-		//ray drawn under mouse cursor [start,end]
-		ofVec3f ray[2];
+		int 				maxSavedChars;
+		vector<string>		lastKey;
+		bool 				mouseIsDown[5];
+		
 };
